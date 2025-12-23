@@ -83,6 +83,10 @@ function InteractiveAvatar() {
 
       await startAvatar(config);
 
+      await avatarInstance.startVoiceChat({
+        useSilencePrompt: false,
+      });
+
       // 시작 인사
       setTimeout(() => {
         handleSendMessage("안녕하세요, 반갑습니다!", true);
