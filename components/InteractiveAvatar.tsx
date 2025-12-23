@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { useMemoizedFn, useUnmount } from "ahooks";
 
 import { Button } from "./Button";
-import { AvatarConfig } from "./AvatarConfig";
 import { AvatarVideo } from "./AvatarSession/AvatarVideo";
 import { useStreamingAvatarSession } from "./logic/useStreamingAvatarSession";
 import { AvatarControls } from "./AvatarSession/AvatarControls";
@@ -31,7 +30,7 @@ const DEFAULT_CONFIG: StartAvatarRequest = {
     emotion: VoiceEmotion.EXCITED,
     model: ElevenLabsModel.eleven_flash_v2_5,
   },
-  language: "en",
+  language: "Korean",  // ⭐ 한국어로 변경
   voiceChatTransport: VoiceChatTransport.WEBSOCKET,
   sttSettings: {
     provider: STTProvider.DEEPGRAM,
@@ -43,9 +42,7 @@ function InteractiveAvatar() {
     useStreamingAvatarSession();
   const { startVoiceChat } = useVoiceChat();
 
-  const [config, setConfig] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
-
-  const hasAutoStartedRef = useRef(false);  // ⭐ useRef로 변경
+  const [config] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
 
   const mediaStream = useRef<HTMLVideoElement>(null);
 
@@ -56,7 +53,7 @@ function InteractiveAvatar() {
       });
       const token = await response.text();
 
-      console.log("Access Token:", token); // Log the token to verify
+      console.log("Access Token:", token);
 
       return token;
     } catch (error) {
@@ -115,16 +112,14 @@ function InteractiveAvatar() {
     stopAvatar();
   });
 
-  // ⭐ 자동 시작: 컴포넌트 마운트 시 한 번만 실행
   useEffect(() => {
-    if (!hasAutoStartedRef.current) {
-      hasAutoStartedRef.current = true;
-      console.log("Auto-starting voice chat...");  // 디버그 로그
-      setTimeout(() => {
-        startSessionV2(true);
-      }, 1000);
+    if (stream && mediaStream.current) {
+      mediaStream.current.srcObject = stream;
+      mediaStream.current.onloadedmetadata = () => {
+        mediaStream.current!.play();
+      };
     }
-  }, []);  // 빈 의존성 배열
+  }, [mediaStream, stream]);
 
   return (
     <div className="w-full flex flex-col gap-4">
@@ -133,7 +128,10 @@ function InteractiveAvatar() {
           {sessionState !== StreamingAvatarSessionState.INACTIVE ? (
             <AvatarVideo ref={mediaStream} />
           ) : (
-            <AvatarConfig config={config} onConfigChange={setConfig} />
+            <div className="flex flex-col items-center justify-center text-white text-center p-4">
+              <p className="text-lg mb-2">🎓 AI 상담 도우미</p>
+              <p className="text-sm text-zinc-400">아래 버튼을 눌러 시작하세요</p>
+            </div>
           )}
         </div>
         <div className="flex flex-col gap-3 items-center justify-center p-4 border-t border-zinc-700 w-full">
@@ -142,10 +140,10 @@ function InteractiveAvatar() {
           ) : sessionState === StreamingAvatarSessionState.INACTIVE ? (
             <div className="flex flex-row gap-4">
               <Button onClick={() => startSessionV2(true)}>
-                Start Voice Chat
+                🎤 음성 상담
               </Button>
               <Button onClick={() => startSessionV2(false)}>
-                Start Text Chat
+                ⌨️ 텍스트 상담
               </Button>
             </div>
           ) : (
