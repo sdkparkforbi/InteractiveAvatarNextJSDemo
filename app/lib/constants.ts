@@ -1,7 +1,7 @@
 export const AVATARS = [
   {
     avatar_id: "8b3dca9e99024b25a526974a7cffdd3a",
-    name: "박대근 교수",
+    name: "Dave Professor",
   },
   {
     avatar_id: "Ann_Therapist_public",
