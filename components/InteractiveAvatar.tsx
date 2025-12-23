@@ -6,6 +6,7 @@ import {
   StartAvatarRequest,
   STTProvider,
   ElevenLabsModel,
+  TaskType,
 } from "@heygen/streaming-avatar";
 import { useEffect, useRef, useState } from "react";
 import { useMemoizedFn, useUnmount } from "ahooks";
@@ -37,8 +38,14 @@ interface ChatMessage {
 }
 
 function InteractiveAvatar() {
-  const { initAvatar, startAvatar, stopAvatar, sessionState, stream, avatarRef } =
-    useStreamingAvatarSession();
+  const {
+    initAvatar,
+    startAvatar,
+    stopAvatar,
+    sessionState,
+    stream,
+    avatarRef,
+  } = useStreamingAvatarSession();
 
   const [config] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
   const [inputText, setInputText] = useState("");
@@ -125,14 +132,14 @@ function InteractiveAvatar() {
         // 아바타가 응답 말하기
         await avatarRef.current.speak({
           text: reply,
-          taskType: "talk",
+          taskType: TaskType.TALK,
         });
       } catch (error) {
         console.error("Error sending message:", error);
       } finally {
         setIsLoading(false);
       }
-    }
+    },
   );
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
