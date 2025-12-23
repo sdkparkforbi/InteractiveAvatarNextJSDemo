@@ -37,7 +37,7 @@ interface ChatMessage {
 }
 
 function InteractiveAvatar() {
-  const { initAvatar, startAvatar, stopAvatar, sessionState, stream, avatar } =
+  const { initAvatar, startAvatar, stopAvatar, sessionState, stream, avatarRef } =
     useStreamingAvatarSession();
 
   const [config] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
@@ -52,7 +52,9 @@ function InteractiveAvatar() {
         method: "POST",
       });
       const token = await response.text();
+
       console.log("Access Token:", token);
+
       return token;
     } catch (error) {
       console.error("Error fetching access token:", error);
@@ -73,7 +75,7 @@ function InteractiveAvatar() {
       });
 
       await startAvatar(config);
-      
+
       // 시작 인사
       setTimeout(() => {
         handleSendMessage("안녕하세요, 반갑습니다!", true);
@@ -83,46 +85,55 @@ function InteractiveAvatar() {
     }
   });
 
-  const handleSendMessage = useMemoizedFn(async (message?: string, isGreeting?: boolean) => {
-    const textToSend = message || inputText.trim();
-    if (!textToSend || !avatar) return;
+  const handleSendMessage = useMemoizedFn(
+    async (message?: string, isGreeting?: boolean) => {
+      const textToSend = message || inputText.trim();
 
-    if (!isGreeting) {
-      setInputText("");
-      setChatHistory((prev) => [...prev, { role: "user", content: textToSend }]);
-    }
-    
-    setIsLoading(true);
-
-    try {
-      // OpenAI API 호출
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: textToSend,
-          history: chatHistory,
-        }),
-      });
-
-      const data = await response.json();
-      const reply = data.reply;
+      if (!textToSend || !avatarRef.current) return;
 
       if (!isGreeting) {
-        setChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
+        setInputText("");
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content: textToSend },
+        ]);
       }
 
-      // 아바타가 응답 말하기
-      await avatar.speak({
-        text: reply,
-        taskType: "talk",
-      });
-    } catch (error) {
-      console.error("Error sending message:", error);
-    } finally {
-      setIsLoading(false);
+      setIsLoading(true);
+
+      try {
+        // OpenAI API 호출
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: textToSend,
+            history: chatHistory,
+          }),
+        });
+
+        const data = await response.json();
+        const reply = data.reply;
+
+        if (!isGreeting) {
+          setChatHistory((prev) => [
+            ...prev,
+            { role: "assistant", content: reply },
+          ]);
+        }
+
+        // 아바타가 응답 말하기
+        await avatarRef.current.speak({
+          text: reply,
+          taskType: "talk",
+        });
+      } catch (error) {
+        console.error("Error sending message:", error);
+      } finally {
+        setIsLoading(false);
+      }
     }
-  });
+  );
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -154,13 +165,13 @@ function InteractiveAvatar() {
               ref={mediaStream}
               autoPlay
               playsInline
-              style={{ display: 'block', width: '100%', height: 'auto' }}
+              style={{ display: "block", width: "100%", height: "auto" }}
             />
             {/* 종료 버튼 */}
             <button
-              onClick={() => stopAvatar()}
               className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs transition-all"
               title="종료"
+              onClick={() => stopAvatar()}
             >
               ✕
             </button>
@@ -170,18 +181,18 @@ function InteractiveAvatar() {
           <div className="p-2 bg-zinc-800 border-t border-zinc-700">
             <div className="flex gap-2">
               <input
+                className="flex-1 px-3 py-2 bg-zinc-700 text-white text-sm rounded-lg border border-zinc-600 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                disabled={isLoading}
+                placeholder="질문을 입력하세요..."
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="질문을 입력하세요..."
-                disabled={isLoading}
-                className="flex-1 px-3 py-2 bg-zinc-700 text-white text-sm rounded-lg border border-zinc-600 focus:outline-none focus:border-purple-500 disabled:opacity-50"
               />
               <button
-                onClick={() => handleSendMessage()}
-                disabled={isLoading || !inputText.trim()}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-zinc-600 text-white text-sm rounded-lg transition-colors"
+                disabled={isLoading || !inputText.trim()}
+                onClick={() => handleSendMessage()}
               >
                 {isLoading ? "..." : "전송"}
               </button>
@@ -193,13 +204,13 @@ function InteractiveAvatar() {
         <div className="w-full h-full flex items-center justify-center">
           {sessionState === StreamingAvatarSessionState.CONNECTING ? (
             <div className="flex flex-col items-center gap-3 text-white">
-              <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
               <span className="text-sm">연결 중...</span>
             </div>
           ) : (
             <button
-              onClick={startSession}
               className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-base font-medium transition-all shadow-lg hover:shadow-xl"
+              onClick={startSession}
             >
               💬 대화신청
             </button>
