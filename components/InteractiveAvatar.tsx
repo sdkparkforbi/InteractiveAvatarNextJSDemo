@@ -45,7 +45,7 @@ function InteractiveAvatar() {
 
   const [config, setConfig] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
 
-  const [hasAutoStarted, setHasAutoStarted] = useState(false);  // ⭐ 추가
+  const hasAutoStartedRef = useRef(false);  // ⭐ useRef로 변경
 
   const mediaStream = useRef<HTMLVideoElement>(null);
 
@@ -115,16 +115,16 @@ function InteractiveAvatar() {
     stopAvatar();
   });
 
-  // ⭐ 자동 시작: 페이지 로드 시 음성 채팅 자동 시작
+  // ⭐ 자동 시작: 컴포넌트 마운트 시 한 번만 실행
   useEffect(() => {
-    if (!hasAutoStarted) {
-      setHasAutoStarted(true);
-      const timer = setTimeout(() => {
-        startSessionV2(true);  // true = Voice Chat
-      }, 500);
-      return () => clearTimeout(timer);
+    if (!hasAutoStartedRef.current) {
+      hasAutoStartedRef.current = true;
+      console.log("Auto-starting voice chat...");  // 디버그 로그
+      setTimeout(() => {
+        startSessionV2(true);
+      }, 1000);
     }
-  }, [hasAutoStarted, startSessionV2]);
+  }, []);  // 빈 의존성 배열
 
   return (
     <div className="w-full flex flex-col gap-4">
