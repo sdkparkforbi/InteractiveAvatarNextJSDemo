@@ -54,7 +54,7 @@ function InteractiveAvatar() {
     }
   }
 
-  const startSessionV2 = useMemoizedFn(async (isVoiceChat: boolean) => {
+  const startSession = useMemoizedFn(async () => {
     try {
       const newToken = await fetchAccessToken();
       const avatar = initAvatar(newToken);
@@ -67,10 +67,7 @@ function InteractiveAvatar() {
       });
 
       await startAvatar(config);
-
-      if (isVoiceChat) {
-        await startVoiceChat();
-      }
+      await startVoiceChat();
     } catch (error) {
       console.error("Error starting avatar session:", error);
     }
@@ -90,53 +87,44 @@ function InteractiveAvatar() {
   }, [mediaStream, stream]);
 
   return (
-    <div className="w-full h-full bg-black relative">
+    <div className="w-full h-full flex items-center justify-center">
       {/* 아바타 영상 */}
       {sessionState === StreamingAvatarSessionState.CONNECTED && stream ? (
-        <video
-          ref={mediaStream}
-          autoPlay
-          playsInline
-          className="w-full h-full object-contain"
-        />
+        <div className="relative">
+          <video
+            ref={mediaStream}
+            autoPlay
+            playsInline
+            className="max-w-full max-h-full object-contain rounded-lg"
+          />
+          {/* 종료 버튼 */}
+          <button
+            onClick={() => stopAvatar()}
+            className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs transition-all"
+            title="종료"
+          >
+            ✕
+          </button>
+        </div>
       ) : (
         /* 시작 전 / 로딩 화면 */
-        <div className="w-full h-full flex items-center justify-center">
+        <div className="flex items-center justify-center">
           {sessionState === StreamingAvatarSessionState.CONNECTING ? (
             /* 로딩 중 */
             <div className="flex flex-col items-center gap-3 text-white">
-              <div className="w-10 h-10 border-3 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
               <span className="text-sm">연결 중...</span>
             </div>
           ) : (
             /* 시작 버튼 */
-            <div className="flex flex-col items-center gap-4">
-              <button
-                onClick={() => startSessionV2(true)}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-base font-medium transition-all shadow-lg hover:shadow-xl"
-              >
-                🎤 음성 상담 시작
-              </button>
-              <button
-                onClick={() => startSessionV2(false)}
-                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-full transition-all"
-              >
-                ⌨️ 텍스트 상담
-              </button>
-            </div>
+            <button
+              onClick={startSession}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-base font-medium transition-all shadow-lg hover:shadow-xl"
+            >
+              💬 대화신청
+            </button>
           )}
         </div>
-      )}
-
-      {/* 종료 버튼 - 우측 상단에 작게 */}
-      {sessionState === StreamingAvatarSessionState.CONNECTED && (
-        <button
-          onClick={() => stopAvatar()}
-          className="absolute top-2 right-2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center text-sm transition-all"
-          title="종료"
-        >
-          ✕
-        </button>
       )}
     </div>
   );
