@@ -45,6 +45,8 @@ function InteractiveAvatar() {
 
   const [config, setConfig] = useState<StartAvatarRequest>(DEFAULT_CONFIG);
 
+  const [hasAutoStarted, setHasAutoStarted] = useState(false);  // ⭐ 추가
+
   const mediaStream = useRef<HTMLVideoElement>(null);
 
   async function fetchAccessToken() {
@@ -113,14 +115,16 @@ function InteractiveAvatar() {
     stopAvatar();
   });
 
+  // ⭐ 자동 시작: 페이지 로드 시 음성 채팅 자동 시작
   useEffect(() => {
-    if (stream && mediaStream.current) {
-      mediaStream.current.srcObject = stream;
-      mediaStream.current.onloadedmetadata = () => {
-        mediaStream.current!.play();
-      };
+    if (!hasAutoStarted) {
+      setHasAutoStarted(true);
+      const timer = setTimeout(() => {
+        startSessionV2(true);  // true = Voice Chat
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [mediaStream, stream]);
+  }, [hasAutoStarted, startSessionV2]);
 
   return (
     <div className="w-full flex flex-col gap-4">
