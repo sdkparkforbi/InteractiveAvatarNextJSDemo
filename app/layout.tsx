@@ -33,7 +33,7 @@ export default function RootLayout({
       lang="ko"
     >
       <head />
-      <body className="h-screen w-screen bg-black text-white overflow-hidden">
+      <body className="h-screen w-screen overflow-hidden">
         {children}
       </body>
     </html>
