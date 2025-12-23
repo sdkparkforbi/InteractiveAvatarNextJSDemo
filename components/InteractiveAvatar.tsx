@@ -10,14 +10,11 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useMemoizedFn, useUnmount } from "ahooks";
 
-import { Button } from "./Button";
 import { AvatarVideo } from "./AvatarSession/AvatarVideo";
 import { useStreamingAvatarSession } from "./logic/useStreamingAvatarSession";
 import { AvatarControls } from "./AvatarSession/AvatarControls";
 import { useVoiceChat } from "./logic/useVoiceChat";
 import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
-import { LoadingIcon } from "./Icons";
-import { MessageHistory } from "./AvatarSession/MessageHistory";
 
 import { AVATARS } from "@/app/lib/constants";
 
@@ -30,7 +27,7 @@ const DEFAULT_CONFIG: StartAvatarRequest = {
     emotion: VoiceEmotion.EXCITED,
     model: ElevenLabsModel.eleven_flash_v2_5,
   },
-  language: "Korean",  // ⭐ 한국어로 변경
+  language: "Korean",
   voiceChatTransport: VoiceChatTransport.WEBSOCKET,
   sttSettings: {
     provider: STTProvider.DEEPGRAM,
@@ -52,9 +49,7 @@ function InteractiveAvatar() {
         method: "POST",
       });
       const token = await response.text();
-
       console.log("Access Token:", token);
-
       return token;
     } catch (error) {
       console.error("Error fetching access token:", error);
@@ -122,37 +117,49 @@ function InteractiveAvatar() {
   }, [mediaStream, stream]);
 
   return (
-    <div className="w-full flex flex-col gap-4">
-      <div className="flex flex-col rounded-xl bg-zinc-900 overflow-hidden">
-        <div className="relative w-full aspect-video overflow-hidden flex flex-col items-center justify-center">
-          {sessionState !== StreamingAvatarSessionState.INACTIVE ? (
-            <AvatarVideo ref={mediaStream} />
-          ) : (
-            <div className="flex flex-col items-center justify-center text-white text-center p-4">
-              <p className="text-lg mb-2">🎓 AI 상담 도우미</p>
-              <p className="text-sm text-zinc-400">아래 버튼을 눌러 시작하세요</p>
+    <div className="w-full h-full flex flex-col bg-zinc-900">
+      {/* 아바타 영상 영역 - 전체 화면 차지 */}
+      <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+        {sessionState !== StreamingAvatarSessionState.INACTIVE ? (
+          <AvatarVideo ref={mediaStream} />
+        ) : (
+          /* 시작 전 화면 */
+          <div className="flex flex-col items-center justify-center text-white">
+            {sessionState === StreamingAvatarSessionState.INACTIVE && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => startSessionV2(true)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm font-medium transition-colors"
+                >
+                  🎤 음성 상담
+                </button>
+                <button
+                  onClick={() => startSessionV2(false)}
+                  className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium transition-colors"
+                >
+                  ⌨️ 텍스트
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 로딩 중 표시 */}
+        {sessionState === StreamingAvatarSessionState.CONNECTING && (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80">
+            <div className="flex flex-col items-center gap-2 text-white">
+              <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-sm">연결 중...</span>
             </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-3 items-center justify-center p-4 border-t border-zinc-700 w-full">
-          {sessionState === StreamingAvatarSessionState.CONNECTED ? (
-            <AvatarControls />
-          ) : sessionState === StreamingAvatarSessionState.INACTIVE ? (
-            <div className="flex flex-row gap-4">
-              <Button onClick={() => startSessionV2(true)}>
-                🎤 음성 상담
-              </Button>
-              <Button onClick={() => startSessionV2(false)}>
-                ⌨️ 텍스트 상담
-              </Button>
-            </div>
-          ) : (
-            <LoadingIcon />
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      {/* 하단 컨트롤 - 연결 후에만 표시 */}
       {sessionState === StreamingAvatarSessionState.CONNECTED && (
-        <MessageHistory />
+        <div className="p-2 border-t border-zinc-700">
+          <AvatarControls />
+        </div>
       )}
     </div>
   );
