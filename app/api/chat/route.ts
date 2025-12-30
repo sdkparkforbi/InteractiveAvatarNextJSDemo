@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       model: "gpt-4o-mini",
       messages,
       max_tokens: 300,
-      temperature: 0.7,
+      temperature: 0,
     });
 
     const reply = response.choices[0]?.message?.content || "죄송합니다. 답변을 생성하지 못했습니다.";
