@@ -184,14 +184,29 @@ function InteractiveAvatar() {
           { role: "user" as const, content: transcript },
         ];
 
-        callOpenAI(transcript, prev).then((reply) => {
-          console.log("🎯 OpenAI reply:", reply);
+        callOpenAI(transcript, prev).then(async (response) => {
+          console.log("🎯 OpenAI response:", response);
+          
+          const reply = response.reply || response;
+          const action = response.action;
+          const navigateTabId = response.tabId;
+
           setChatHistory((current) => [
             ...current,
             { role: "assistant" as const, content: reply },
           ]);
 
-          speakWithAvatar(reply);
+          // 아바타 발화
+          await speakWithAvatar(reply);
+
+          // 🎯 탭 이동 명령이 있으면 부모 페이지에 전달
+          if (action === "navigate" && navigateTabId) {
+            console.log("📑 Navigate to tab:", navigateTabId);
+            window.parent.postMessage({
+              type: "NAVIGATE_TAB",
+              tabId: navigateTabId
+            }, "*");
+          }
 
           setIsLoading(false);
           isProcessingRef.current = false;
@@ -451,7 +466,11 @@ function InteractiveAvatar() {
 
     setChatHistory(newHistory);
 
-    const reply = await callOpenAI(text, chatHistory);
+    const response = await callOpenAI(text, chatHistory);
+    
+    const reply = response.reply || response;
+    const action = response.action;
+    const navigateTabId = response.tabId;
 
     setChatHistory([
       ...newHistory,
@@ -459,6 +478,16 @@ function InteractiveAvatar() {
     ]);
 
     await speakWithAvatar(reply);
+
+    // 🎯 탭 이동 명령이 있으면 부모 페이지에 전달
+    if (action === "navigate" && navigateTabId) {
+      console.log("📑 Navigate to tab:", navigateTabId);
+      window.parent.postMessage({
+        type: "NAVIGATE_TAB",
+        tabId: navigateTabId
+      }, "*");
+    }
+
     setIsLoading(false);
   });
 
