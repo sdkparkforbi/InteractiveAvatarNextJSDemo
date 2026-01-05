@@ -33,9 +33,9 @@ const AVATAR_CONFIG: StartAvatarRequest = {
   quality: AvatarQuality.Low,
   avatarName: AVATARS[0].avatar_id,
   voice: {
-    rate: 1.5,
-    emotion: VoiceEmotion.EXCITED,
-    model: ElevenLabsModel.eleven_flash_v2_5,
+    rate: 1.0,
+    emotion: VoiceEmotion.FRIENDLY,
+    model: ElevenLabsModel.eleven_multilingual_v2,
   },
   language: "ko",
 };
