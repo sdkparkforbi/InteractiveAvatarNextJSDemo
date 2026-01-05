@@ -353,17 +353,28 @@ function InteractiveAvatar() {
   const resetSession = useMemoizedFn(async () => {
     console.log("🔄 세션 초기화 중...");
 
+    // Web Speech 정리
     if (webSpeechRef.current) {
       webSpeechRef.current.destroy();
       webSpeechRef.current = null;
     }
 
+    // HeyGen 세션 정리 (여러 방법 시도)
     try {
-      await stopAvatar();
+      if (avatarRef.current) {
+        await avatarRef.current.stopAvatar();
+      }
     } catch (e) {
       console.log("stopAvatar 에러 (무시):", e);
     }
 
+    try {
+      await stopAvatar();
+    } catch (e) {
+      console.log("stopAvatar hook 에러 (무시):", e);
+    }
+
+    // 상태 초기화
     hasStartedRef.current = false;
     hasGreetedRef.current = false;
     isProcessingRef.current = false;
@@ -375,7 +386,7 @@ function InteractiveAvatar() {
     setInterimTranscript("");
     setCurrentTab("");
 
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 1000)); // 1초 대기
     console.log("🔄 세션 초기화 완료");
   });
 
@@ -554,6 +565,36 @@ function InteractiveAvatar() {
       // ignore
     }
   });
+
+  // ============================================
+  // 🔄 페이지 새로고침/닫기 전 세션 정리
+  // ============================================
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log("🔄 beforeunload - 세션 정리 중...");
+      
+      // Web Speech 정리
+      if (webSpeechRef.current) {
+        webSpeechRef.current.destroy();
+        webSpeechRef.current = null;
+      }
+      
+      // HeyGen 세션 정리
+      if (avatarRef.current) {
+        try {
+          avatarRef.current.stopAvatar();
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [avatarRef]);
 
   // 비디오 스트림 연결
   useEffect(() => {
