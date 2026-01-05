@@ -115,10 +115,11 @@ function InteractiveAvatar() {
         }),
       });
       const data = await response.json();
-      return data.reply;
+      console.log("📦 API raw response:", data);
+      return data; // 전체 객체 반환 { reply, action, tabId }
     } catch (error) {
       console.error("OpenAI API error:", error);
-      return "죄송합니다. 일시적인 오류가 발생했습니다. 다시 말씀해 주세요.";
+      return { reply: "죄송합니다. 일시적인 오류가 발생했습니다. 다시 말씀해 주세요.", action: "none", tabId: null };
     }
   };
 
