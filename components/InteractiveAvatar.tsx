@@ -130,10 +130,14 @@ function InteractiveAvatar() {
       if (!avatarRef.current || !text) return;
 
       try {
+        // 🔇 Web Speech 완전히 정지
         console.log("🔇 Web Speech 일시정지");
         isAvatarSpeakingRef.current = true;
         setIsAvatarSpeaking(true);
         webSpeechRef.current?.pause();
+
+        // 잠시 대기 (Web Speech가 완전히 멈출 때까지)
+        await new Promise((r) => setTimeout(r, 300));
 
         // HeyGen 자동 응답 차단
         try {
@@ -211,16 +215,41 @@ function InteractiveAvatar() {
       setCurrentTab(tabId);
       setIsLoading(true);
 
+      // 🔇 먼저 Web Speech 일시정지
+      console.log("🔇 Tab change - Web Speech 일시정지");
+      isAvatarSpeakingRef.current = true;
+      setIsAvatarSpeaking(true);
+      webSpeechRef.current?.pause();
+
+      // 현재 발화 중이면 중단
+      if (avatarRef.current) {
+        try {
+          await avatarRef.current.interrupt();
+        } catch {
+          // ignore
+        }
+      }
+
       // API에서 스크립트 가져오기
       const script = await fetchTabScript(tabId);
 
-      // 아바타로 발화
-      await speakWithAvatar(script);
+      // 아바타로 발화 (speakWithAvatar 내부에서 다시 pause 호출해도 OK)
+      if (avatarRef.current && script) {
+        try {
+          console.log("🗣️ Avatar speaking:", script);
+          await avatarRef.current.speak({
+            text: script,
+            taskType: TaskType.REPEAT,
+          });
+        } catch (error) {
+          console.error("Avatar speak error:", error);
+        }
+      }
 
       setIsLoading(false);
       isProcessingRef.current = false;
     },
-    [speakWithAvatar],
+    [avatarRef],
   );
 
   // ============================================
