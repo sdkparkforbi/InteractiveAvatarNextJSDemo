@@ -247,8 +247,22 @@ function InteractiveAvatar() {
       });
 
       avatarInstance.on(StreamingEvents.USER_END_MESSAGE, (event) => {
-        const finalMessage = event.detail?.message;
+        // 이벤트 구조 디버깅
+        console.log("🎤 USER_END_MESSAGE event:", event);
+        console.log("🎤 event.detail:", event.detail);
+        
+        // 다양한 구조 시도
+        const finalMessage = 
+          event.detail?.message || 
+          event.detail?.text || 
+          event.detail?.transcript ||
+          event.message ||
+          event.text ||
+          event.transcript ||
+          (typeof event.detail === 'string' ? event.detail : null);
+          
         console.log("🎤 User final message:", finalMessage);
+        
         if (finalMessage && finalMessage.trim()) {
           handleUserSpeech(finalMessage);
         }
