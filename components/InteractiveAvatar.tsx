@@ -1,13 +1,12 @@
 /**
  * ================================================
- * InteractiveAvatar.tsx - 경영학전공 탭별 설명 아바타
+ * InteractiveAvatar.tsx - 경영학전공 AI 가이드
  * ================================================
  *
- * 흐름:
- * 1. 메인 페이지(index.html)에서 탭 클릭
- * 2. postMessage로 TAB_CHANGED 수신
- * 3. route.ts API 호출 (type: "tab_explain")
- * 4. 반환된 스크립트로 avatar.speak(REPEAT)
+ * 기능:
+ * 1. 탭 클릭 → postMessage → route.ts에서 고정 스크립트 → REPEAT 발화
+ * 2. 음성 질문 → HeyGen STT → OpenAI → REPEAT 발화
+ * 3. 텍스트 질문 → OpenAI → REPEAT 발화
  *
  * ================================================
  */
@@ -64,6 +63,7 @@ function InteractiveAvatar() {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [isListening, setIsListening] = useState(false);
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [currentTab, setCurrentTab] = useState<string>("");
   const mediaStream = useRef<HTMLVideoElement>(null);
@@ -149,7 +149,32 @@ function InteractiveAvatar() {
   );
 
   // ============================================
-  // 🎯 탭 변경 처리 (핵심 기능)
+  // 🎤 사용자 음성 처리 (Voice Chat)
+  // ============================================
+  const handleUserSpeech = useMemoizedFn(async (transcript: string) => {
+    if (!transcript.trim() || isProcessingRef.current) return;
+
+    isProcessingRef.current = true;
+    setIsLoading(true);
+
+    console.log("🎤 User said:", transcript);
+
+    const newHistory = [...chatHistory, { role: "user" as const, content: transcript }];
+    setChatHistory(newHistory);
+
+    const reply = await callOpenAI(transcript, chatHistory);
+    console.log("🤖 OpenAI reply:", reply);
+
+    setChatHistory([...newHistory, { role: "assistant" as const, content: reply }]);
+
+    await speakWithAvatar(reply);
+
+    setIsLoading(false);
+    isProcessingRef.current = false;
+  });
+
+  // ============================================
+  // 🎯 탭 변경 처리
   // ============================================
   const handleTabChange = useCallback(
     async (tabId: string) => {
@@ -171,7 +196,7 @@ function InteractiveAvatar() {
 
       // API에서 스크립트 가져오기
       const script = await fetchTabScript(tabId);
-      
+
       // 아바타로 발화
       await speakWithAvatar(script);
 
@@ -197,7 +222,7 @@ function InteractiveAvatar() {
           await new Promise((r) => setTimeout(r, 1500));
 
           const greeting =
-            "안녕하세요! 차의과학대학교 경영학전공 AI 가이드입니다. 궁금한 탭을 클릭하시면 자세히 설명해드릴게요!";
+            "안녕하세요! 차의과학대학교 경영학전공 AI 가이드입니다. 궁금한 탭을 클릭하거나, 질문을 말씀해주세요!";
 
           await speakWithAvatar(greeting);
           setChatHistory([{ role: "assistant", content: greeting }]);
@@ -210,6 +235,26 @@ function InteractiveAvatar() {
         hasGreetedRef.current = false;
       });
 
+      // 🎤 음성 인식 이벤트
+      avatarInstance.on(StreamingEvents.USER_START, () => {
+        console.log("🎤 User started speaking");
+        setIsListening(true);
+      });
+
+      avatarInstance.on(StreamingEvents.USER_STOP, () => {
+        console.log("🎤 User stopped speaking");
+        setIsListening(false);
+      });
+
+      avatarInstance.on(StreamingEvents.USER_END_MESSAGE, (event) => {
+        const finalMessage = event.detail?.message;
+        console.log("🎤 User final message:", finalMessage);
+        if (finalMessage && finalMessage.trim()) {
+          handleUserSpeech(finalMessage);
+        }
+      });
+
+      // 🗣️ 아바타 발화 상태
       avatarInstance.on(StreamingEvents.AVATAR_START_TALKING, () => {
         console.log("🗣️ Avatar started talking");
         setIsAvatarSpeaking(true);
@@ -221,13 +266,18 @@ function InteractiveAvatar() {
       });
 
       await startAvatar(config);
+
+      // 🎤 Voice Chat 시작
+      await avatarInstance.startVoiceChat();
+      console.log("🎤 Voice chat started");
+
     } catch (error) {
       console.error("Error starting avatar session:", error);
     }
   });
 
   // ============================================
-  // 💬 텍스트 메시지 전송 (OpenAI 대화)
+  // 💬 텍스트 메시지 전송
   // ============================================
   const handleSendMessage = useMemoizedFn(async () => {
     const textToSend = inputText.trim();
@@ -308,12 +358,14 @@ function InteractiveAvatar() {
   // ============================================
   const getStatusText = () => {
     if (isAvatarSpeaking) return "설명 중...";
-    if (isLoading) return "준비 중...";
-    return "탭을 클릭하세요";
+    if (isListening) return "듣는 중...";
+    if (isLoading) return "응답 생성 중...";
+    return "말씀하세요";
   };
 
   const getStatusColor = () => {
     if (isAvatarSpeaking) return "bg-blue-500 animate-pulse";
+    if (isListening) return "bg-red-500 animate-pulse";
     if (isLoading) return "bg-yellow-500";
     return "bg-green-500";
   };
@@ -363,7 +415,7 @@ function InteractiveAvatar() {
               <input
                 className="flex-1 px-3 py-2 bg-zinc-700 text-white text-sm rounded-lg border border-zinc-600 focus:outline-none focus:border-purple-500 disabled:opacity-50"
                 disabled={isLoading || isAvatarSpeaking}
-                placeholder="추가 질문이 있으시면 입력하세요..."
+                placeholder="또는 텍스트로 질문하세요..."
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
