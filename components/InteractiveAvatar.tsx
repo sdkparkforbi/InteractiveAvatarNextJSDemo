@@ -30,12 +30,12 @@ import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
 import { AVATARS } from "@/app/lib/constants";
 import { WebSpeechRecognizer } from "@/app/lib/webSpeechAPI";
 
-// 아바타 설정 - Nova 다국어 음성 사용
+// 아바타 설정 - InJoon 한국어 남성 음성 + Wayne 아바타 사용
 const AVATAR_CONFIG: StartAvatarRequest = {
   quality: AvatarQuality.Low,
-  avatarName: AVATARS[0].avatar_id,
+  avatarName: "Wayne_20240711",  // 한국인 남성 아바타
   voice: {
-    voiceId: "71b0aa6499f6458e8b040818a017db1f",  // Nova (Multilingual)
+    voiceId: "9d81087c3f9a45df8c22ab91cf46ca89",  // InJoon - Natural (한국어 남성)
     rate: 1.0,
     emotion: VoiceEmotion.FRIENDLY,
   },
