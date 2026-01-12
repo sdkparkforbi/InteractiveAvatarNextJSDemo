@@ -11,7 +11,7 @@
  * 핵심: 아바타가 말할 때 Web Speech 일시정지 → 자기 목소리 인식 방지
  * 
  * 🔧 2026-01-12 수정:
- * - TTS 발음 문제 해결 ("기 오 경영" → 띄어쓰기/쉼표로 호흡 조절)
+ * - ElevenLabs 다국어 모델 → HeyGen 한국어 전용 음성 (SunHi) 변경
  * ================================================
  */
 
@@ -20,7 +20,6 @@ import {
   StreamingEvents,
   VoiceEmotion,
   StartAvatarRequest,
-  ElevenLabsModel,
   TaskType,
 } from "@heygen/streaming-avatar";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -31,14 +30,14 @@ import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
 import { AVATARS } from "@/app/lib/constants";
 import { WebSpeechRecognizer } from "@/app/lib/webSpeechAPI";
 
-// 아바타 설정
+// 아바타 설정 - SunHi 한국어 여성 음성 사용
 const AVATAR_CONFIG: StartAvatarRequest = {
   quality: AvatarQuality.Low,
   avatarName: AVATARS[0].avatar_id,
   voice: {
+    voiceId: "bef4755ca1f442359c2fe6420690c8f7",  // SunHi - 한국어 여성
     rate: 1.0,
     emotion: VoiceEmotion.FRIENDLY,
-    model: ElevenLabsModel.eleven_multilingual_v2,
   },
   language: "ko",
 };
@@ -413,9 +412,8 @@ function InteractiveAvatar() {
         if (!hasGreetedRef.current) {
           await new Promise((r) => setTimeout(r, 1500));
 
-          // 🔧 수정: TTS 발음을 위해 띄어쓰기와 쉼표로 호흡 조절
           const greeting =
-            "안녕하세요! 차의과학대학교, 경영학 전공 AI 가이드입니다. 궁금한 탭을 클릭하시거나, 질문을 말씀해 주세요!";
+            "안녕하세요! 차의과학대학교 경영학전공 AI 가이드입니다. 궁금한 탭을 클릭하거나, 질문을 말씀해주세요!";
 
           console.log("👋 인사말:", greeting);
           await speakWithAvatar(greeting);
