@@ -9,6 +9,9 @@
  * 3. 텍스트 질문 → OpenAI → REPEAT 발화
  *
  * 핵심: 아바타가 말할 때 Web Speech 일시정지 → 자기 목소리 인식 방지
+ * 
+ * 🔧 2026-01-12 수정:
+ * - TTS 발음 문제 해결 ("기 오 경영" → 띄어쓰기/쉼표로 호흡 조절)
  * ================================================
  */
 
@@ -410,8 +413,9 @@ function InteractiveAvatar() {
         if (!hasGreetedRef.current) {
           await new Promise((r) => setTimeout(r, 1500));
 
+          // 🔧 수정: TTS 발음을 위해 띄어쓰기와 쉼표로 호흡 조절
           const greeting =
-            "안녕하세요! 차의과학대학교 경영학전공 AI 가이드입니다. 궁금한 탭을 클릭하거나, 질문을 말씀해주세요!";
+            "안녕하세요! 차의과학대학교, 경영학 전공 AI 가이드입니다. 궁금한 탭을 클릭하시거나, 질문을 말씀해 주세요!";
 
           console.log("👋 인사말:", greeting);
           await speakWithAvatar(greeting);
