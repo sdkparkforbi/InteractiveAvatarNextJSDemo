@@ -30,12 +30,12 @@ import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
 import { AVATARS } from "@/app/lib/constants";
 import { WebSpeechRecognizer } from "@/app/lib/webSpeechAPI";
 
-// 아바타 설정 - Elizabeth Friendly 다국어 음성 사용
+// 아바타 설정 - Nova 다국어 음성 사용
 const AVATAR_CONFIG: StartAvatarRequest = {
   quality: AvatarQuality.Low,
   avatarName: AVATARS[0].avatar_id,
   voice: {
-    voiceId: "55f8c0f546884f9cbdefa113f5e7b682",  // Elizabeth - Friendly (Multilingual)
+    voiceId: "71b0aa6499f6458e8b040818a017db1f",  // Nova (Multilingual)
     rate: 1.0,
     emotion: VoiceEmotion.FRIENDLY,
   },
