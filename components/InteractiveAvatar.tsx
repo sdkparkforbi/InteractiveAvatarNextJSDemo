@@ -4,6 +4,10 @@
  * ================================================
  *
  * 🆕 2026-01-22 업데이트: 음성 명령 기반 게임 제어
+ * 🔧 2026-01-22 수정: 의도 분석 로직 개선
+ *    - "실행", "열어", "켜줘" 등 키워드 추가
+ *    - UI_CONTROL 먼저 체크하도록 순서 변경
+ *    - confidence threshold 조정
  * 
  * 기능:
  * 1. 음성 명령 → Intent Recognition → 게임/UI 자동 제어
@@ -30,7 +34,7 @@ import { AVATARS } from "@/app/lib/constants";
 import { WebSpeechRecognizer } from "@/app/lib/webSpeechAPI";
 
 // ============================================
-// 🆕 음성 명령 의도 분석 시스템
+// 🆕 음성 명령 의도 분석 시스템 (수정됨)
 // ============================================
 
 interface VoiceIntent {
@@ -63,7 +67,8 @@ const VOICE_COMMAND_PATTERNS = {
     ],
     calc: [
       '계산', '산수', '덧셈', '뺄셈', '계산 게임', '산수 게임',
-      '계산 시작', '산수 시작', '계산 하자', '산수 하자', '수학', '더하기 빼기'
+      '계산 시작', '산수 시작', '계산 하자', '산수 하자', '수학', '더하기 빼기',
+      '산수 계산'  // 🆕 추가
     ],
     sequence: [
       '순서', '순서 맞추기', '그림 순서', '순서 게임', '순서 시작',
@@ -103,6 +108,13 @@ const VOICE_COMMAND_PATTERNS = {
   ]
 };
 
+// 🆕 게임 시작 동작 키워드 (확장됨!)
+const GAME_ACTION_KEYWORDS = [
+  '시작', '하자', '해줘', '해', '할래', '하고 싶어', '해볼래', '하고싶어',
+  '실행', '열어', '켜줘', '켜', '플레이', '게임', '고', 'go', '해보자',
+  '열어줘', '시작해', '시작해줘', '해봐', '해 봐', '시작하자'
+];
+
 // 게임 한글명 매핑
 const GAME_NAMES: Record<string, string> = {
   hwatu: '화투 짝맞추기',
@@ -123,7 +135,10 @@ const UI_RESPONSES: Record<string, string> = {
 };
 
 /**
- * 🆕 음성 입력에서 의도를 분석하는 함수
+ * 🆕 음성 입력에서 의도를 분석하는 함수 (수정됨!)
+ * 
+ * 순서: UI_CONTROL → GAME_START → INFO_REQUEST → GENERAL_CHAT
+ * (UI 제어를 먼저 체크하여 "랭킹"이 게임 시작으로 오인되지 않도록)
  */
 function analyzeVoiceIntent(transcript: string): VoiceIntent {
   const normalizedText = transcript
@@ -131,39 +146,45 @@ function analyzeVoiceIntent(transcript: string): VoiceIntent {
     .replace(/\s+/g, ' ')
     .trim();
   
-  // 1. 게임 시작 명령 체크
-  for (const [game, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.GAME_START)) {
+  console.log('[🔍 Intent Analysis] Input:', normalizedText);
+  
+  // ⭐ 1. UI 제어 명령 먼저 체크 (우선순위 높음!)
+  for (const [action, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.UI_CONTROL)) {
     for (const keyword of keywords) {
       if (normalizedText.includes(keyword)) {
-        // "시작", "하자", "해줘" 등의 동작 키워드 확인
-        const actionKeywords = ['시작', '하자', '해줘', '해', '할래', '하고 싶어', '해볼래', '하고싶어'];
-        const hasActionWord = actionKeywords.some(action => normalizedText.includes(action));
-        
-        // 게임 이름만 말해도 시작 의도로 인식 (어르신 편의성)
-        // 단, 너무 짧은 단어(예: "숫자")는 동작 키워드 필요
-        const isShortKeyword = keyword.length <= 2;
-        
-        if (hasActionWord || (!isShortKeyword && keywords.slice(0, 5).some(k => normalizedText.includes(k)))) {
-          return {
-            type: 'GAME_START',
-            action: `START_GAME_${game.toUpperCase()}`,
-            game: game,
-            confidence: hasActionWord ? 0.95 : 0.8
-          };
-        }
+        console.log('[🔍 Intent Analysis] UI_CONTROL matched:', action, 'keyword:', keyword);
+        return {
+          type: 'UI_CONTROL',
+          action: action,
+          confidence: 0.95
+        };
       }
     }
   }
   
-  // 2. UI 제어 명령 체크
-  for (const [action, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.UI_CONTROL)) {
+  // 2. 게임 시작 명령 체크
+  for (const [game, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.GAME_START)) {
     for (const keyword of keywords) {
       if (normalizedText.includes(keyword)) {
-        return {
-          type: 'UI_CONTROL',
-          action: action,
-          confidence: 0.9
-        };
+        // 🆕 확장된 동작 키워드 체크
+        const hasActionWord = GAME_ACTION_KEYWORDS.some(action => normalizedText.includes(action));
+        
+        // 게임 이름만 말해도 시작 의도로 인식 (어르신 편의성)
+        // 단, 너무 짧은 단어(예: "숫자", "계산")는 동작 키워드 필요
+        const isShortKeyword = keyword.length <= 2;
+        
+        // 🆕 게임 관련 키워드가 명확하면 바로 인식
+        const isExplicitGameKeyword = keyword.includes('게임') || keyword.includes('시작');
+        
+        if (hasActionWord || isExplicitGameKeyword || (!isShortKeyword && keywords.slice(0, 3).some(k => normalizedText.includes(k)))) {
+          console.log('[🔍 Intent Analysis] GAME_START matched:', game, 'keyword:', keyword, 'hasAction:', hasActionWord);
+          return {
+            type: 'GAME_START',
+            action: `START_GAME_${game.toUpperCase()}`,
+            game: game,
+            confidence: hasActionWord ? 0.95 : 0.85
+          };
+        }
       }
     }
   }
@@ -171,6 +192,7 @@ function analyzeVoiceIntent(transcript: string): VoiceIntent {
   // 3. 정보 요청 체크 (기존 LLM으로 처리)
   for (const keyword of VOICE_COMMAND_PATTERNS.INFO_REQUEST) {
     if (normalizedText.includes(keyword)) {
+      console.log('[🔍 Intent Analysis] INFO_REQUEST matched:', keyword);
       return {
         type: 'INFO_REQUEST',
         confidence: 0.85
@@ -179,6 +201,7 @@ function analyzeVoiceIntent(transcript: string): VoiceIntent {
   }
   
   // 4. 일반 대화
+  console.log('[🔍 Intent Analysis] GENERAL_CHAT (default)');
   return {
     type: 'GENERAL_CHAT',
     confidence: 0.7
@@ -319,7 +342,7 @@ function InteractiveAvatar() {
   );
 
   // ============================================
-  // 🆕 사용자 음성 처리 (Intent Recognition 포함)
+  // 🆕 사용자 음성 처리 (Intent Recognition 포함) - 수정됨!
   // ============================================
   const handleUserSpeech = useCallback(
     async (transcript: string) => {
@@ -339,14 +362,14 @@ function InteractiveAvatar() {
       try {
         // 🆕 의도 분석
         const intent = analyzeVoiceIntent(transcript);
-        console.log('[Voice Intent]', intent, 'from:', transcript);
+        console.log('[Voice Intent Result]', intent);
 
         switch (intent.type) {
           case 'GAME_START':
-            // 부모 창(index.html)에 게임 시작 명령 전송
+            // 🆕 먼저 부모 창에 게임 시작 명령 전송!
             sendVoiceCommand(intent.action!, intent.game);
             
-            // 아바타가 응답
+            // 그 다음 아바타가 응답
             const gameName = GAME_NAMES[intent.game!] || intent.game;
             const gameResponse = `네! ${gameName} 게임을 시작할게요. 화이팅!`;
             
@@ -553,7 +576,7 @@ function InteractiveAvatar() {
           if (userName) {
             greeting = await callChatAPI('greeting', { userName });
           } else {
-            greeting = "안녕하세요! 저는 두뇌 건강 도우미예요. '화투 게임 시작'이나 '내 점수 보여줘'처럼 말씀해 주세요!";
+            greeting = "안녕하세요! 저는 두뇌 건강 도우미예요. '산수 계산 게임 실행'이나 '내 점수 보여줘'처럼 말씀해 주세요!";
           }
 
           console.log("👋 인사말:", greeting);
