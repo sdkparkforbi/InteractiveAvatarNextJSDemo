@@ -1,17 +1,16 @@
 /**
  * ================================================
- * InteractiveAvatar.tsx - 경영학전공 AI 가이드
+ * InteractiveAvatar.tsx - 치매예방 게임 AI 아바타
  * ================================================
  *
+ * 🆕 2026-01-22 업데이트: 음성 명령 기반 게임 제어
+ * 
  * 기능:
- * 1. 탭 클릭 → postMessage → route.ts에서 고정 스크립트 → REPEAT 발화
- * 2. 음성 질문 → Web Speech API → OpenAI → REPEAT 발화
- * 3. 텍스트 질문 → OpenAI → REPEAT 발화
+ * 1. 음성 명령 → Intent Recognition → 게임/UI 자동 제어
+ * 2. 일반 대화 → OpenAI → 응답 생성
+ * 3. postMessage로 index.html과 양방향 통신
  *
  * 핵심: 아바타가 말할 때 Web Speech 일시정지 → 자기 목소리 인식 방지
- * 
- * 🔧 2026-01-12 수정:
- * - ElevenLabs 다국어 모델 → HeyGen 한국어 전용 음성 (SunHi) 변경
  * ================================================
  */
 
@@ -30,13 +29,170 @@ import { StreamingAvatarProvider, StreamingAvatarSessionState } from "./logic";
 import { AVATARS } from "@/app/lib/constants";
 import { WebSpeechRecognizer } from "@/app/lib/webSpeechAPI";
 
-// 아바타 설정 - Onyx 다국어 남성 음성 + Wayne 아바타 사용
+// ============================================
+// 🆕 음성 명령 의도 분석 시스템
+// ============================================
+
+interface VoiceIntent {
+  type: 'GAME_START' | 'UI_CONTROL' | 'INFO_REQUEST' | 'GENERAL_CHAT';
+  action?: string;
+  game?: string;
+  confidence: number;
+}
+
+// 명령어 패턴 정의 (한국어 자연어 변형 포함)
+const VOICE_COMMAND_PATTERNS = {
+  // 게임 시작 명령
+  GAME_START: {
+    hwatu: [
+      '화투', '카드', '짝맞추기', '짝 맞추기', '카드게임', '카드 게임',
+      '화투 시작', '카드 시작', '짝맞추기 시작', '짝맞추기 해', '짝맞추기 하자',
+      '화투 게임', '카드짝', '그림 맞추기'
+    ],
+    pattern: [
+      '색상', '패턴', '색깔', '색상 패턴', '색깔 기억', '색상 게임', '패턴 게임',
+      '색상 시작', '패턴 시작', '색깔 맞추기', '사이먼', '색깔 순서'
+    ],
+    memory: [
+      '숫자', '숫자 기억', '숫자 외우기', '숫자 게임', '숫자 맞추기',
+      '숫자 시작', '숫자 기억하기', '숫자 외우기 하자', '번호 기억'
+    ],
+    proverb: [
+      '속담', '속담 완성', '속담 게임', '속담 맞추기', '속담 시작',
+      '속담 완성하기', '속담 하자', '옛말', '격언'
+    ],
+    calc: [
+      '계산', '산수', '덧셈', '뺄셈', '계산 게임', '산수 게임',
+      '계산 시작', '산수 시작', '계산 하자', '산수 하자', '수학', '더하기 빼기'
+    ],
+    sequence: [
+      '순서', '순서 맞추기', '그림 순서', '순서 게임', '순서 시작',
+      '순서 맞추기 하자', '순서 정하기', '차례', '배열'
+    ]
+  },
+  
+  // UI 제어 명령
+  UI_CONTROL: {
+    SHOW_MY_RECORDS: [
+      '내 점수', '내 기록', '점수 보여', '기록 보여', '내 점수 보여줘',
+      '점수 확인', '내 성적', '성적 보여줘', '내 기록 보여줘', '점수 창'
+    ],
+    SHOW_DASHBOARD: [
+      '대시보드', '인지 분석', '두뇌 건강', '분석 보여줘', '인지 점수',
+      '두뇌 분석', '건강 분석', '인지 능력', '뇌 건강'
+    ],
+    SHOW_RANKING: [
+      '랭킹', '순위', '1등', '일등', '랭킹 보여줘', '순위 보여줘',
+      '누가 1등', '전체 순위', '랭킹 창', '등수'
+    ],
+    CLOSE_MODAL: [
+      '닫아', '닫기', '나가', '나가기', '뒤로', '뒤로가기', '창 닫아',
+      '그만', '끝', '종료', '취소', '돌아가'
+    ],
+    SAVE_SCORE: [
+      '저장', '저장해', '저장해줘', '기록 저장', '점수 저장',
+      '세이브', '저장하자', '저장 해줘'
+    ]
+  },
+  
+  // 정보 요청 (기존 LLM 처리) - action 키워드 감지용
+  INFO_REQUEST: [
+    '점수 알려줘', '오늘 몇점', '최고 점수', '평균 점수',
+    '몇번 했어', '며칠째', '설명해줘', '어떻게 해', '방법 알려줘',
+    '규칙이 뭐야', '어떻게 하는 거야'
+  ]
+};
+
+// 게임 한글명 매핑
+const GAME_NAMES: Record<string, string> = {
+  hwatu: '화투 짝맞추기',
+  pattern: '색상 패턴 기억',
+  memory: '숫자 기억하기',
+  proverb: '속담 완성하기',
+  calc: '산수 계산',
+  sequence: '순서 맞추기'
+};
+
+// UI 액션별 응답 메시지
+const UI_RESPONSES: Record<string, string> = {
+  'SHOW_MY_RECORDS': '네, 기록을 보여드릴게요.',
+  'SHOW_DASHBOARD': '인지 분석 대시보드를 열어드릴게요.',
+  'SHOW_RANKING': '전체 랭킹을 보여드릴게요.',
+  'CLOSE_MODAL': '네, 창을 닫을게요.',
+  'SAVE_SCORE': '점수를 저장할게요.'
+};
+
+/**
+ * 🆕 음성 입력에서 의도를 분석하는 함수
+ */
+function analyzeVoiceIntent(transcript: string): VoiceIntent {
+  const normalizedText = transcript
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // 1. 게임 시작 명령 체크
+  for (const [game, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.GAME_START)) {
+    for (const keyword of keywords) {
+      if (normalizedText.includes(keyword)) {
+        // "시작", "하자", "해줘" 등의 동작 키워드 확인
+        const actionKeywords = ['시작', '하자', '해줘', '해', '할래', '하고 싶어', '해볼래', '하고싶어'];
+        const hasActionWord = actionKeywords.some(action => normalizedText.includes(action));
+        
+        // 게임 이름만 말해도 시작 의도로 인식 (어르신 편의성)
+        // 단, 너무 짧은 단어(예: "숫자")는 동작 키워드 필요
+        const isShortKeyword = keyword.length <= 2;
+        
+        if (hasActionWord || (!isShortKeyword && keywords.slice(0, 5).some(k => normalizedText.includes(k)))) {
+          return {
+            type: 'GAME_START',
+            action: `START_GAME_${game.toUpperCase()}`,
+            game: game,
+            confidence: hasActionWord ? 0.95 : 0.8
+          };
+        }
+      }
+    }
+  }
+  
+  // 2. UI 제어 명령 체크
+  for (const [action, keywords] of Object.entries(VOICE_COMMAND_PATTERNS.UI_CONTROL)) {
+    for (const keyword of keywords) {
+      if (normalizedText.includes(keyword)) {
+        return {
+          type: 'UI_CONTROL',
+          action: action,
+          confidence: 0.9
+        };
+      }
+    }
+  }
+  
+  // 3. 정보 요청 체크 (기존 LLM으로 처리)
+  for (const keyword of VOICE_COMMAND_PATTERNS.INFO_REQUEST) {
+    if (normalizedText.includes(keyword)) {
+      return {
+        type: 'INFO_REQUEST',
+        confidence: 0.85
+      };
+    }
+  }
+  
+  // 4. 일반 대화
+  return {
+    type: 'GENERAL_CHAT',
+    confidence: 0.7
+  };
+}
+
+// ============================================
+// 아바타 설정
+// ============================================
 const AVATAR_CONFIG: StartAvatarRequest = {
   quality: AvatarQuality.Low,
-  avatarName: "Wayne_20240711",  // 한국인 남성 아바타
+  avatarName: AVATARS[0].avatar_id,
   voice: {
-    voiceId: "26b2064088674c80b1e5fc5ab1a068ea",  // Onyx (Multilingual)
-    rate: 1.0,
+    rate: 1.2,
     emotion: VoiceEmotion.FRIENDLY,
   },
   language: "ko",
@@ -64,13 +220,14 @@ function InteractiveAvatar() {
   const [isListening, setIsListening] = useState(false);
   const [isAvatarSpeaking, setIsAvatarSpeaking] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
-  const [currentTab, setCurrentTab] = useState<string>("");
   const mediaStream = useRef<HTMLVideoElement>(null);
 
   // 내부 상태 refs
   const isProcessingRef = useRef(false);
   const hasGreetedRef = useRef(false);
   const hasStartedRef = useRef(false);
+  const userNameRef = useRef<string>("");
+  const userStatsRef = useRef<any>(null);
 
   // Web Speech API ref
   const webSpeechRef = useRef<WebSpeechRecognizer | null>(null);
@@ -86,44 +243,41 @@ function InteractiveAvatar() {
     return token;
   };
 
-  // 🎯 탭 설명 API 호출 (고정 스크립트 반환)
-  const fetchTabScript = async (tabId: string): Promise<string> => {
+  // 🎯 LLM API 호출 (채팅, 인사말, 게임설명)
+  const callChatAPI = async (
+    type: string,
+    data: Record<string, any>
+  ): Promise<string> => {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "tab_explain",
-          tabId: tabId,
+          type,
+          ...data,
+          userName: userNameRef.current,
         }),
       });
-      const data = await response.json();
-      return data.reply || "설명을 불러올 수 없습니다.";
+      const result = await response.json();
+      return result.reply || "응답을 생성할 수 없습니다.";
     } catch (error) {
-      console.error("Tab script API error:", error);
+      console.error("Chat API error:", error);
       return "죄송합니다. 오류가 발생했습니다.";
     }
   };
 
-  // 💬 일반 채팅 API 호출 (OpenAI)
-  const callOpenAI = async (message: string, history: ChatMessage[]) => {
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: message,
-          history: history,
-        }),
-      });
-      const data = await response.json();
-      console.log("📦 API raw response:", data);
-      return data; // 전체 객체 반환 { reply, action, tabId }
-    } catch (error) {
-      console.error("OpenAI API error:", error);
-      return { reply: "죄송합니다. 일시적인 오류가 발생했습니다. 다시 말씀해 주세요.", action: "none", tabId: null };
-    }
-  };
+  // ============================================
+  // 🆕 부모 창(index.html)에 음성 명령 전송
+  // ============================================
+  const sendVoiceCommand = useCallback((action: string, game?: string) => {
+    console.log("📤 Sending VOICE_COMMAND:", { action, game });
+    window.parent.postMessage({
+      type: 'VOICE_COMMAND',
+      action: action,
+      game: game,
+      timestamp: Date.now()
+    }, '*');
+  }, []);
 
   // ============================================
   // 아바타 음성 출력 (Web Speech 일시정지 포함)
@@ -161,14 +315,15 @@ function InteractiveAvatar() {
         webSpeechRef.current?.resume();
       }
     },
-    [avatarRef],
+    [avatarRef]
   );
 
   // ============================================
-  // 🎤 사용자 음성 처리 (Web Speech API용)
+  // 🆕 사용자 음성 처리 (Intent Recognition 포함)
   // ============================================
   const handleUserSpeech = useCallback(
     async (transcript: string) => {
+      // 아바타가 말하는 중이면 무시
       if (isAvatarSpeakingRef.current) {
         console.log("⏸️ 아바타가 말하는 중 - 무시:", transcript);
         return;
@@ -181,93 +336,76 @@ function InteractiveAvatar() {
       setInterimTranscript("");
       console.log("🎯 User said:", transcript);
 
-      setChatHistory((prev) => {
-        const newHistory = [
-          ...prev,
-          { role: "user" as const, content: transcript },
-        ];
+      try {
+        // 🆕 의도 분석
+        const intent = analyzeVoiceIntent(transcript);
+        console.log('[Voice Intent]', intent, 'from:', transcript);
 
-        callOpenAI(transcript, prev).then(async (response) => {
-          console.log("🎯 OpenAI response:", response);
-          
-          const reply = response.reply || response;
-          const action = response.action;
-          const navigateTabId = response.tabId;
+        switch (intent.type) {
+          case 'GAME_START':
+            // 부모 창(index.html)에 게임 시작 명령 전송
+            sendVoiceCommand(intent.action!, intent.game);
+            
+            // 아바타가 응답
+            const gameName = GAME_NAMES[intent.game!] || intent.game;
+            const gameResponse = `네! ${gameName} 게임을 시작할게요. 화이팅!`;
+            
+            setChatHistory(prev => [
+              ...prev,
+              { role: "user", content: transcript },
+              { role: "assistant", content: gameResponse }
+            ]);
+            
+            await speakWithAvatar(gameResponse);
+            break;
 
-          setChatHistory((current) => [
-            ...current,
-            { role: "assistant" as const, content: reply },
-          ]);
+          case 'UI_CONTROL':
+            // 부모 창에 UI 제어 명령 전송
+            sendVoiceCommand(intent.action!);
+            
+            // 아바타 응답
+            const uiResponse = UI_RESPONSES[intent.action!] || '알겠습니다.';
+            
+            setChatHistory(prev => [
+              ...prev,
+              { role: "user", content: transcript },
+              { role: "assistant", content: uiResponse }
+            ]);
+            
+            await speakWithAvatar(uiResponse);
+            break;
 
-          // 아바타 발화
-          await speakWithAvatar(reply);
+          case 'INFO_REQUEST':
+          case 'GENERAL_CHAT':
+          default:
+            // 기존 LLM 대화 처리
+            setChatHistory(prev => [
+              ...prev,
+              { role: "user", content: transcript }
+            ]);
 
-          // 🎯 탭 이동 명령이 있으면 부모 페이지에 전달
-          if (action === "navigate" && navigateTabId) {
-            console.log("📑 Navigate to tab:", navigateTabId);
-            window.parent.postMessage({
-              type: "NAVIGATE_TAB",
-              tabId: navigateTabId
-            }, "*");
-          }
-
-          setIsLoading(false);
-          isProcessingRef.current = false;
-        });
-
-        return newHistory;
-      });
-    },
-    [speakWithAvatar],
-  );
-
-  // ============================================
-  // 🎯 탭 변경 처리
-  // ============================================
-  const handleTabChange = useCallback(
-    async (tabId: string) => {
-      if (isProcessingRef.current) return;
-      isProcessingRef.current = true;
-
-      console.log("📑 Tab changed:", tabId);
-      setCurrentTab(tabId);
-      setIsLoading(true);
-
-      // 🔇 먼저 Web Speech 일시정지
-      console.log("🔇 Tab change - Web Speech 일시정지");
-      isAvatarSpeakingRef.current = true;
-      setIsAvatarSpeaking(true);
-      webSpeechRef.current?.pause();
-
-      // 현재 발화 중이면 중단
-      if (avatarRef.current) {
-        try {
-          await avatarRef.current.interrupt();
-        } catch {
-          // ignore
+            const reply = await callChatAPI('chat', {
+              message: transcript,
+              history: chatHistory
+            });
+            
+            setChatHistory(prev => [
+              ...prev,
+              { role: "assistant", content: reply }
+            ]);
+            
+            await speakWithAvatar(reply);
+            break;
         }
+      } catch (error) {
+        console.error('[Voice Command Error]', error);
+        await speakWithAvatar('죄송해요, 다시 한번 말씀해 주세요.');
+      } finally {
+        setIsLoading(false);
+        isProcessingRef.current = false;
       }
-
-      // API에서 스크립트 가져오기
-      const script = await fetchTabScript(tabId);
-
-      // 아바타로 발화 (speakWithAvatar 내부에서 다시 pause 호출해도 OK)
-      if (avatarRef.current && script) {
-        try {
-          console.log("🗣️ Avatar speaking:", script);
-          await avatarRef.current.speak({
-            text: script,
-            taskType: TaskType.REPEAT,
-          });
-        } catch (error) {
-          console.error("Avatar speak error:", error);
-        }
-      }
-
-      setIsLoading(false);
-      isProcessingRef.current = false;
     },
-    [avatarRef],
+    [speakWithAvatar, sendVoiceCommand, chatHistory]
   );
 
   // ============================================
@@ -281,9 +419,6 @@ function InteractiveAvatar() {
 
     if (!WebSpeechRecognizer.isSupported()) {
       console.error("🎤 Web Speech API 지원하지 않는 브라우저");
-      alert(
-        "이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge를 사용해주세요.",
-      );
       return;
     }
 
@@ -332,9 +467,7 @@ function InteractiveAvatar() {
         onError: (error: string) => {
           console.error("🎤 Web Speech 에러:", error);
           if (error === "not-allowed") {
-            alert(
-              "마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.",
-            );
+            alert("마이크 권한이 필요합니다. 브라우저 설정에서 마이크를 허용해주세요.");
           }
         },
       },
@@ -343,7 +476,7 @@ function InteractiveAvatar() {
         continuous: true,
         interimResults: true,
         autoRestart: true,
-      },
+      }
     );
 
     console.log("🎤 Web Speech API 초기화 완료");
@@ -361,7 +494,7 @@ function InteractiveAvatar() {
       webSpeechRef.current = null;
     }
 
-    // HeyGen 세션 정리 (여러 방법 시도)
+    // HeyGen 세션 정리
     try {
       if (avatarRef.current) {
         await avatarRef.current.stopAvatar();
@@ -381,14 +514,15 @@ function InteractiveAvatar() {
     hasGreetedRef.current = false;
     isProcessingRef.current = false;
     isAvatarSpeakingRef.current = false;
+    userNameRef.current = "";
+    userStatsRef.current = null;
     setChatHistory([]);
     setIsLoading(false);
     setIsListening(false);
     setIsAvatarSpeaking(false);
     setInterimTranscript("");
-    setCurrentTab("");
 
-    await new Promise((r) => setTimeout(r, 1000)); // 1초 대기
+    await new Promise((r) => setTimeout(r, 1000));
     console.log("🔄 세션 초기화 완료");
   });
 
@@ -412,8 +546,15 @@ function InteractiveAvatar() {
         if (!hasGreetedRef.current) {
           await new Promise((r) => setTimeout(r, 1500));
 
-          const greeting =
-            "안녕하세요! 차의과학대학교 경영학전공 AI 가이드입니다. 궁금한 탭을 클릭하거나, 질문을 말씀해주세요!";
+          // 인사말 생성
+          const userName = userNameRef.current;
+          let greeting: string;
+          
+          if (userName) {
+            greeting = await callChatAPI('greeting', { userName });
+          } else {
+            greeting = "안녕하세요! 저는 두뇌 건강 도우미예요. '화투 게임 시작'이나 '내 점수 보여줘'처럼 말씀해 주세요!";
+          }
 
           console.log("👋 인사말:", greeting);
           await speakWithAvatar(greeting);
@@ -471,38 +612,9 @@ function InteractiveAvatar() {
     if (!text || !avatarRef.current || isLoading) return;
 
     setInputText("");
-    setIsLoading(true);
-
-    const newHistory = [
-      ...chatHistory,
-      { role: "user" as const, content: text },
-    ];
-
-    setChatHistory(newHistory);
-
-    const response = await callOpenAI(text, chatHistory);
     
-    const reply = response.reply || response;
-    const action = response.action;
-    const navigateTabId = response.tabId;
-
-    setChatHistory([
-      ...newHistory,
-      { role: "assistant" as const, content: reply },
-    ]);
-
-    await speakWithAvatar(reply);
-
-    // 🎯 탭 이동 명령이 있으면 부모 페이지에 전달
-    if (action === "navigate" && navigateTabId) {
-      console.log("📑 Navigate to tab:", navigateTabId);
-      window.parent.postMessage({
-        type: "NAVIGATE_TAB",
-        tabId: navigateTabId
-      }, "*");
-    }
-
-    setIsLoading(false);
+    // 텍스트 입력도 음성과 동일하게 처리
+    await handleUserSpeech(text);
   });
 
   // ============================================
@@ -529,38 +641,49 @@ function InteractiveAvatar() {
   // ============================================
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      // origin 검증 (보안)
-      const allowedOrigins = [
-        "https://sdkparkforbi.github.io",
-        "http://localhost",
-        "http://127.0.0.1",
-      ];
+      const { type, name, stats, game } = event.data || {};
+      console.log("📥 Received message:", { type, name, game });
 
-      const isAllowed = allowedOrigins.some((origin) =>
-        event.origin.startsWith(origin)
-      );
+      switch (type) {
+        case "RESET_AVATAR":
+        case "STOP_AVATAR":
+          await resetSession();
+          break;
 
-      if (!isAllowed) {
-        console.log("⚠️ Ignored message from:", event.origin);
-        return;
-      }
+        case "START_AVATAR":
+          await resetSession();
+          if (name) userNameRef.current = name;
+          if (stats) userStatsRef.current = stats;
+          startSession();
+          break;
 
-      const { type, tabId } = event.data || {};
-      console.log("📥 Received message:", { type, tabId, origin: event.origin });
+        case "EXPLAIN_GAME":
+          if (avatarRef.current && game) {
+            const explanation = await callChatAPI("game_explain", { game });
+            await speakWithAvatar(explanation);
+          }
+          break;
 
-      if (type === "TAB_CHANGED" && tabId) {
-        handleTabChange(tabId);
+        case "EXPLAIN_DASHBOARD":
+          if (avatarRef.current) {
+            const explanation = await callChatAPI("dashboard_explain", event.data);
+            await speakWithAvatar(explanation);
+          }
+          break;
+          
+        case "USER_INFO":
+          if (name) userNameRef.current = name;
+          break;
       }
     };
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [handleTabChange]);
+  }, [resetSession, startSession, speakWithAvatar]);
 
   // 언마운트 시 정리
   useUnmount(() => {
     webSpeechRef.current?.destroy();
-
     try {
       stopAvatar();
     } catch {
@@ -568,20 +691,14 @@ function InteractiveAvatar() {
     }
   });
 
-  // ============================================
-  // 🔄 페이지 새로고침/닫기 전 세션 정리
-  // ============================================
+  // 페이지 새로고침/닫기 전 세션 정리
   useEffect(() => {
     const handleBeforeUnload = () => {
       console.log("🔄 beforeunload - 세션 정리 중...");
-      
-      // Web Speech 정리
       if (webSpeechRef.current) {
         webSpeechRef.current.destroy();
         webSpeechRef.current = null;
       }
-      
-      // HeyGen 세션 정리
       if (avatarRef.current) {
         try {
           avatarRef.current.stopAvatar();
@@ -592,10 +709,7 @@ function InteractiveAvatar() {
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
-    
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [avatarRef]);
 
   // 비디오 스트림 연결
@@ -610,8 +724,8 @@ function InteractiveAvatar() {
   // UI
   // ============================================
   const getStatusText = () => {
-    if (isAvatarSpeaking) return "설명 중...";
-    if (isListening) return "듣는 중...";
+    if (isAvatarSpeaking) return "말하는 중...";
+    if (isListening) return "듣고 있어요 🎤";
     if (isLoading) return "생각 중...";
     return "말씀하세요";
   };
@@ -665,15 +779,6 @@ function InteractiveAvatar() {
               </span>
             </div>
 
-            {/* 현재 탭 표시 */}
-            {currentTab && (
-              <div className="absolute bottom-2 right-2">
-                <span className="text-white text-xs bg-purple-600/80 px-2 py-1 rounded">
-                  📑 {currentTab}
-                </span>
-              </div>
-            )}
-
             {/* 중간 인식 결과 표시 */}
             {interimTranscript && (
               <div className="absolute bottom-10 left-2 right-2">
@@ -720,7 +825,7 @@ function InteractiveAvatar() {
               className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-base font-medium shadow-lg"
               onClick={startSession}
             >
-              🎓 AI 가이드 시작
+              🧠 AI 도우미 시작
             </button>
           )}
         </div>
